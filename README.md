@@ -1,53 +1,70 @@
-# 🛒 Ecommerce Data Pipeline (Pro Edition)
+# Ecommerce Data Pipeline
 
-Hệ thống ETL pipeline hoàn chỉnh phục vụ phân tích dữ liệu E-commerce chuyên sâu.
+A production-like ETL pipeline and Data Warehouse project for E-commerce data.
 
----
+## Architecture
 
-## 📐 Architecture
+The pipeline processes raw CSV files through several layers to build a fully modeled Data Warehouse and analytics Marts.
 
-Hệ thống được thiết kế theo mô hình **Snapshot-based Data Lakehouse**:
-
-1.  **Raw Layer**: Dữ liệu gốc từ CSV.
-2.  **Staging Layer**: Dữ liệu được làm sạch, giữ nguyên lịch sử (full status).
-3.  **Warehouse Layer**: Mô hình hoá Star Schema với `fact_orders` (order-level) và `fact_order_items` (item-level).
-4.  **Mart Layer**: Các bảng đã được aggregate sẵn phục vụ Dashboard nhanh chóng.
-5.  **Serving Layer**: Hỗ trợ lưu trữ Local Parquet và load lên Google BigQuery.
-
----
-
-## 📁 Data Modeling (Pro)
-
-### Fact Tables
-- **`fact_orders`**: 1 dòng = 1 đơn hàng. Chứa tổng giá trị, số lượng item, phí ship.
-- **`fact_order_items`**: 1 dòng = 1 sản phẩm trong đơn hàng. Dùng để phân tích Category/Product.
-- **`fact_payments`**: 1 dòng = 1 giao dịch thanh toán. Phân tích phương thức và trả góp.
-
-### Mart Tables
-- **`mart_revenue_daily`**: Doanh thu & AOV theo ngày.
-- **`mart_category_performance`**: Hiệu suất theo danh mục sản phẩm.
-- **`mart_payment_summary`**: Thống kê phương thức thanh toán.
-
----
-
-## 🚀 Getting Started
-
-### 1. Cấu hình
-Chỉnh sửa `config.yaml` để thay đổi đường dẫn hoặc đích đến (local / bigquery).
-
-### 2. Chạy Pipeline
-```bash
-make run
+```
+data/raw/ (Raw CSV)
+  ↓
+[Extract & Clean]
+  ↓
+data/staging/ (Cleaned parquet files)
+  ↓
+[Model: Dims & Facts]
+  ↓
+data/warehouse/ (Star Schema parquet files)
+  ↓
+[Aggregate: Marts]
+  ↓
+data/warehouse/ (Mart parquet files)
+  ↓
+[Optional: BigQuery Load]
 ```
 
-### 3. Kiểm tra kết quả
-Dữ liệu sẽ được lưu tại `data/mart/ecommerce/latest/` và phân đoạn theo ngày tại `dt=YYYY-MM-DD/`.
+## Data Model
 
----
+### Warehouse Layer (Star Schema)
+- **`fact_orders`**: Order-level granularity.
+- **`fact_order_items`**: Item-level granularity.
+- **`fact_payments`**: Transaction-level granularity.
+- **`dim_customers`**: Customer dimensions.
+- **`dim_products`**: Product dimensions.
+- **`dim_date`**: Date dimension generated from order dates.
 
-## ✅ Điểm nâng cấp so với bản cũ
-- [x] **Granularity chuẩn**: Tách biệt Fact Orders và Fact Order Items.
-- [x] **Mart Layer**: Tối ưu tốc độ cho Dashboard.
-- [x] **Config-Driven**: Điều khiển pipeline qua `config.yaml`.
-- [x] **Date Partitioning**: Lưu trữ dữ liệu snapshot theo ngày.
-- [x] **BigQuery Ready**: Sẵn sàng chuyển đổi target sang Cloud chỉ bằng 1 flag.
+### Mart Layer (Analytics Ready)
+- `mart_revenue_by_day`
+- `mart_revenue_by_month`
+- `mart_revenue_by_category`
+- `mart_payment_method_summary`
+- `mart_order_status_daily`
+- `mart_top_products`
+- `mart_customer_geo`
+
+## Configuration
+All paths, business rules, and pipeline settings are managed in `config.yaml`. No paths are hardcoded in the Python scripts.
+
+## How to Run
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run the pipeline locally:**
+   ```bash
+   python -m pipeline.run_pipeline
+   ```
+
+3. **Run tests:**
+   ```bash
+   pytest tests/ -v
+   ```
+
+## BigQuery (Optional)
+This project includes a template for loading the final warehouse tables to Google BigQuery. 
+To enable:
+1. Edit `config.yaml`: Set `load.target: bigquery` and `bigquery.enabled: true`. Provide your `project_id`.
+2. Ensure `GOOGLE_APPLICATION_CREDENTIALS` is set in your environment.

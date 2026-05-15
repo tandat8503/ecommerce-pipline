@@ -1,10 +1,22 @@
-data:
-  raw_dir: data/raw
-  staging_dir: data/staging
-  warehouse_dir: data/warehouse
+project:
+  name: ecommerce_pipeline
+  environment: local
 
-pipeline:
-  min_price: 0.0
+data:
+  raw_path: data/raw
+  staging_path: data/staging/ecommerce
+  warehouse_path: data/warehouse/ecommerce
+  pipeline_date: auto
+
+files:
+  orders: orders/orders.csv
+  order_items: order_items/order_items.csv
+  customers: customers/customers.csv
+  payments: payments/payments.csv
+  products: products/products.csv
+
+business:
+  revenue_status: delivered
   valid_order_statuses:
     - delivered
     - shipped
@@ -14,13 +26,17 @@ pipeline:
     - unavailable
     - approved
     - created
-  # Status dùng để tính revenue trong fact_orders
-  revenue_status: delivered
+
+load:
+  target: local
+  write_latest: true
+  write_partitioned: true
 
 bigquery:
-  project_id: "your-gcp-project-id"
-  dataset: "ecommerce_dwh"
-  load_target: "local" # local | bigquery
+  enabled: false
+  project_id: ""
+  dataset: ecommerce_dwh
+  location: US
 
 logging:
   level: INFO

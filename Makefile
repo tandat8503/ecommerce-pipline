@@ -1,12 +1,10 @@
-# Ecommerce Pipeline — Quick Commands
+.PHONY: install run test lint clean
 
-.PHONY: setup run test lint format push
-
-setup:
+install:
 	pip install -r requirements.txt
 
 run:
-	python pipeline/run_pipeline.py
+	python -m pipeline.run_pipeline
 
 test:
 	pytest tests/ -v
@@ -14,10 +12,5 @@ test:
 lint:
 	ruff check pipeline/ tests/
 
-format:
-	ruff format pipeline/ tests/
-
-push:
-	git add .
-	git commit -m "$(msg)"
-	git push origin main
+clean:
+	rm -rf data/staging/* data/warehouse/* data/mart/* logs/* .pytest_cache/ __pycache__/ pipeline/**/__pycache__/

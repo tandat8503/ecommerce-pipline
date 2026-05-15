@@ -1,65 +1,42 @@
 """
-transform/transform_products.py
-
-Nhiệm vụ: Làm sạch bảng products raw → staging.
-
-Steps:
-    1. Drop duplicate product_id
-    2. Normalize category name
-    3. Fillna numeric columns với median
+pipeline/transform/transform_products.py
+Clean raw products data for the staging layer.
 """
 
 import pandas as pd
-
 from pipeline.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-_NUMERIC_COLS = [
+NUMERIC_COLS = [
     "product_weight_g",
     "product_length_cm",
     "product_height_cm",
     "product_width_cm",
 ]
 
-
 def clean_products(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Nhận raw products DataFrame → trả về cleaned DataFrame.
-
-    Args:
-        df: output của read_products()
-
-    Returns:
-        Cleaned DataFrame lưu vào staging/products.parquet
+    Clean products: Deduplicate, handle null categories, and impute missing numerics.
     """
     logger.info(f"[TRANSFORM] products — start: {len(df):,} rows")
+    df = df.copy()
 
-    # 1. Dedup
-    before = len(df)
+    # Deduplicate by product_id
+    before_len = len(df)
     df = df.drop_duplicates(subset=["product_id"], keep="first")
-    if (dropped := before - len(df)):
-        logger.warning(f"[TRANSFORM] products — dropped {dropped} duplicate product_id")
+    if before_len > len(df):
+        logger.warning(f"[TRANSFORM] products — dropped {before_len - len(df)} duplicate product_ids")
 
-    # 2. Normalize category
-    df["product_category_name"] = (
-        df["product_category_name"]
-        .fillna("unknown")
-        .str.lower()
-        .str.strip()
-    )
+    # Handle category
+    if "product_category_name" in df.columns:
+        df["product_category_name"] = df["product_category_name"].fillna("unknown").astype(str).str.lower().str.strip()
 
-    # 3. Fillna numeric với median (ít bị ảnh hưởng bởi outlier hơn mean)
-    for col in _NUMERIC_COLS:
+    # Impute numeric columns with median
+    for col in NUMERIC_COLS:
         if col in df.columns:
-            null_count = df[col].isnull().sum()
-            if null_count > 0:
-                median_val = df[col].median()
-                df[col] = df[col].fillna(median_val)
-                logger.info(
-                    f"[TRANSFORM] products — '{col}': "
-                    f"filled {null_count} nulls with median={median_val:.1f}"
-                )
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
 
     logger.info(f"[TRANSFORM] products — done: {len(df):,} rows")
     return df

@@ -1,87 +1,51 @@
 """
-load/load_bigquery.py — Load data lên Google BigQuery.
-
-Đây là bước cuối trong production pipeline thực tế.
-Thay vì lưu Parquet local, data được push thẳng lên BigQuery
-để team BI/Analytics query bằng Looker, Data Studio, Metabase...
-
-Cách dùng trong production:
-    1. Cài: pip install google-cloud-bigquery pandas-gbq pyarrow
-    2. Set credentials: export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
-    3. Gọi: load_to_bigquery(df, "dataset.table_name")
-
-Hiện tại file này là TEMPLATE — bạn sẽ dùng khi học GCP.
+pipeline/load/load_bigquery.py
+Template to load data into Google BigQuery.
 """
 
 import pandas as pd
-
+import os
+from pipeline.utils.config import config
 from pipeline.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# ── BigQuery Config ───────────────────────────────────────────────────────────
-# Trong production, lấy từ environment variables hoặc Secret Manager
-GCP_PROJECT_ID = "your-gcp-project-id"   # TODO: thay bằng project thật
-BQ_DATASET     = "ecommerce_warehouse"    # Dataset trên BigQuery
+def load_all_to_bigquery(tables: dict):
+    if not config.bq_enabled:
+        logger.info("[LOAD BQ] BigQuery is disabled in config.yaml. Skipping.")
+        return
 
+    logger.info("[LOAD BQ] ── Starting BigQuery Load ──")
+    
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        logger.warning("GOOGLE_APPLICATION_CREDENTIALS env var is not set. Load might fail.")
 
-def load_to_bigquery(
-    df:         pd.DataFrame,
-    table_name: str,
-    if_exists:  str = "replace",          # "replace" | "append"
-) -> None:
-    """
-    Load DataFrame lên BigQuery table.
-
-    Args:
-        df:         DataFrame cần upload
-        table_name: Tên bảng (vd: "fact_orders" → project.dataset.fact_orders)
-        if_exists:  "replace" = xoá bảng cũ + tạo mới
-                    "append"  = thêm vào bảng đang có (dùng cho incremental load)
-
-    Requires:
-        pip install pandas-gbq google-cloud-bigquery pyarrow
-        GOOGLE_APPLICATION_CREDENTIALS environment variable
-
-    Example:
-        load_to_bigquery(fact_orders_df, "fact_orders")
-    """
-    # Lazy import — chỉ import khi thật sự cần (không bắt buộc cài nếu dùng local)
     try:
         import pandas_gbq
     except ImportError:
-        logger.error(
-            "[LOAD BQ] ❌ pandas-gbq chưa được cài. "
-            "Chạy: pip install pandas-gbq google-cloud-bigquery"
-        )
+        logger.error("pandas-gbq is not installed. Please add it to requirements.txt.")
         raise
 
-    destination = f"{GCP_PROJECT_ID}.{BQ_DATASET}.{table_name}"
-    logger.info(f"[LOAD BQ] Uploading {len(df):,} rows → {destination}")
+    project_id = config.bq_project_id
+    dataset = config.bq_dataset
 
-    pandas_gbq.to_gbq(
-        dataframe    = df,
-        destination_table = destination,
-        project_id   = GCP_PROJECT_ID,
-        if_exists    = if_exists,
-        progress_bar = False,
-    )
+    if not project_id:
+        logger.error("BigQuery project_id is empty in config.yaml")
+        raise ValueError("Missing project_id")
 
-    logger.info(f"[LOAD BQ] ✅ {table_name} uploaded to BigQuery — {len(df):,} rows")
-
-
-def load_all_to_bigquery(
-    tables:    dict[str, pd.DataFrame],
-    if_exists: str = "replace",
-) -> None:
-    """
-    Upload tất cả warehouse tables lên BigQuery.
-
-    Args:
-        tables:    {"fact_orders": df, "dim_customers": df, ...}
-        if_exists: "replace" hoặc "append"
-    """
-    logger.info(f"[LOAD BQ] ── Uploading {len(tables)} tables to BigQuery ──")
     for table_name, df in tables.items():
-        load_to_bigquery(df, table_name, if_exists=if_exists)
-    logger.info("[LOAD BQ] ── All tables uploaded ✅ ──")
+        destination = f"{project_id}.{dataset}.{table_name}"
+        logger.info(f"[LOAD BQ] Uploading {table_name} ({len(df):,} rows) to {destination}...")
+        try:
+            pandas_gbq.to_gbq(
+                dataframe=df,
+                destination_table=destination,
+                project_id=project_id,
+                if_exists="replace",
+                location=config.bq_location,
+                progress_bar=False,
+            )
+            logger.info(f"[LOAD BQ] ✅ {table_name} uploaded successfully.")
+        except Exception as e:
+            logger.error(f"[LOAD BQ] ❌ Failed to upload {table_name}: {e}")
+            raise

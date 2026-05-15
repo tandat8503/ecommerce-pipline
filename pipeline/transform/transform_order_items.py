@@ -1,68 +1,29 @@
 """
-transform_order_items.py — Transform layer cho bảng Order Items.
-
-Nhiệm vụ:
-  1. Drop rows có price <= 0 (invalid)
-  2. Tính total_amount = price + shipping_charges
-  3. Drop duplicate (order_id + product_id)
+pipeline/transform/transform_order_items.py
+Clean raw order_items data for the staging layer.
 """
 
 import pandas as pd
-
-from pipeline.config import MIN_PRICE
-from pipeline.logger import get_logger
+from pipeline.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-
-def _drop_invalid_price(df: pd.DataFrame) -> pd.DataFrame:
-    """Loại bỏ dòng có giá không hợp lệ (price <= 0)."""
-    before = len(df)
-    df = df[df["price"] > MIN_PRICE].copy()
-    dropped = before - len(df)
-    if dropped:
-        logger.warning(
-            f"[TRANSFORM order_items] Dropped {dropped} rows with price <= {MIN_PRICE}"
-        )
-    return df
-
-
-def _add_total_amount(df: pd.DataFrame) -> pd.DataFrame:
-    """Tạo cột total_amount = price + shipping_charges."""
-    df["total_amount"] = df["price"].fillna(0) + df["shipping_charges"].fillna(0)
-    return df
-
-
-def _drop_duplicates(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop duplicate (order_id, product_id) — giữ dòng đầu tiên."""
-    before = len(df)
-    df = df.drop_duplicates(subset=["order_id", "product_id"], keep="first")
-    dropped = before - len(df)
-    if dropped:
-        logger.warning(
-            f"[TRANSFORM order_items] Dropped {dropped} duplicate (order_id, product_id) rows"
-        )
-    return df
-
-
-def transform_order_items(df: pd.DataFrame) -> pd.DataFrame:
+def clean_order_items(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Hàm chính: nhận raw order_items DataFrame, trả về cleaned DataFrame.
-
-    Args:
-        df: DataFrame thô từ extract layer
-
-    Returns:
-        DataFrame đã được làm sạch
+    Clean order items: Ensure price and shipping are non-negative and add total value.
     """
-    logger.info(f"[TRANSFORM order_items] Start — {len(df):,} rows")
+    logger.info(f"[TRANSFORM] order_items — start: {len(df):,} rows")
+    df = df.copy()
 
-    df = (
-        df
-        .pipe(_drop_invalid_price)
-        .pipe(_add_total_amount)
-        .pipe(_drop_duplicates)
-    )
+    # Ensure valid numbers
+    for col in ["price", "shipping_charges"]:
+        if col in df.columns:
+            df[col] = df[col].fillna(0.0)
+            df.loc[df[col] < 0, col] = 0.0
 
-    logger.info(f"[TRANSFORM order_items] Done — {len(df):,} rows")
+    # Calculate item_total
+    if "price" in df.columns and "shipping_charges" in df.columns:
+        df["item_total"] = df["price"] + df["shipping_charges"]
+
+    logger.info(f"[TRANSFORM] order_items — done: {len(df):,} rows")
     return df

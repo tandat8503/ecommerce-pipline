@@ -1,67 +1,38 @@
 """
-load/load_local.py — Load data xuống local filesystem dưới dạng Parquet.
-
-Architecture:
-    Lưu vào 2 nơi:
-    1. dt=YYYY-MM-DD/  → Partitioned storage
-    2. latest/         → Current state
-
-Layers:
-    - Staging
-    - Warehouse (Fact/Dim)
-    - Mart (Aggregated)
+pipeline/load/load_local.py
+Save dataframes to local parquet files.
 """
 
 import pandas as pd
 from pathlib import Path
-from pipeline.utils.config import (
-    get_staging_path, 
-    get_staging_latest_path,
-    get_warehouse_path,
-    get_warehouse_latest_path,
-    PROJECT_ROOT
-)
+from pipeline.utils.config import config
 from pipeline.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MART PATH HELPERS (Thêm vào đây cho nhanh, đúng ra nên có trong config.py)
-# ─────────────────────────────────────────────────────────────────────────────
-def get_mart_path(table: str, date: str) -> Path:
-    p = PROJECT_ROOT / "data" / "mart" / "ecommerce" / f"dt={date}" / f"{table}.parquet"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
-
-def get_mart_latest_path(table: str) -> Path:
-    p = PROJECT_ROOT / "data" / "mart" / "ecommerce" / "latest" / f"{table}.parquet"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-def _save_parquet(df: pd.DataFrame, path: Path, label: str) -> None:
+def save_parquet(df: pd.DataFrame, path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False, engine="pyarrow", compression="snappy")
     size_mb = path.stat().st_size / 1_048_576
-    logger.info(f"[LOAD LOCAL] ✅ {label} → {path.name} | {len(df):,} rows | {size_mb:.2f} MB")
+    logger.info(f"[LOAD LOCAL] ✅ Saved {path.name} ({len(df):,} rows, {size_mb:.2f} MB) to {path.parent}")
 
-
-def load_all_staging(tables: dict[str, pd.DataFrame]) -> None:
-    logger.info("[LOAD LOCAL] ── Saving to Staging Layer ──")
+def load_staging(tables: dict):
+    logger.info("[LOAD LOCAL] ── Saving Staging Layer ──")
     for name, df in tables.items():
-        _save_parquet(df, get_staging_path(name), f"staging/{name} (partition)")
-        _save_parquet(df, get_staging_latest_path(name), f"staging/{name} (latest)")
+        if config.write_partitioned:
+            p = config.staging_base / f"dt={config.pipeline_date}" / f"{name}.parquet"
+            save_parquet(df, p)
+        if config.write_latest:
+            p = config.staging_base / "latest" / f"{name}.parquet"
+            save_parquet(df, p)
 
-
-def load_all_warehouse(tables: dict[str, pd.DataFrame]) -> None:
-    logger.info("[LOAD LOCAL] ── Saving to Warehouse Layer ──")
-    for name, df in tables.items():
-        _save_parquet(df, get_warehouse_path(name), f"warehouse/{name} (partition)")
-        _save_parquet(df, get_warehouse_latest_path(name), f"warehouse/{name} (latest)")
-
-
-def load_all_mart(tables: dict[str, pd.DataFrame], date: str) -> None:
-    logger.info("[LOAD LOCAL] ── Saving to Mart Layer ──")
-    for name, df in tables.items():
-        _save_parquet(df, get_mart_path(name, date), f"mart/{name} (partition)")
-        _save_parquet(df, get_mart_latest_path(name), f"mart/{name} (latest)")
+def load_warehouse(warehouse_tables: dict, mart_tables: dict):
+    logger.info("[LOAD LOCAL] ── Saving Warehouse Layer ──")
+    all_tables = {**warehouse_tables, **mart_tables}
+    for name, df in all_tables.items():
+        if config.write_partitioned:
+            p = config.warehouse_base / f"dt={config.pipeline_date}" / f"{name}.parquet"
+            save_parquet(df, p)
+        if config.write_latest:
+            p = config.warehouse_base / "latest" / f"{name}.parquet"
+            save_parquet(df, p)
