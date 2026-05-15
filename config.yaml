@@ -1,0 +1,22 @@
+data:
+  raw_dir: data/raw
+  staging_dir: data/staging
+  warehouse_dir: data/warehouse
+
+pipeline:
+  min_price: 0.0
+  valid_order_statuses:
+    - delivered
+    - shipped
+    - canceled
+    - processing
+    - invoiced
+    - unavailable
+    - approved
+    - created
+  # Status dùng để tính revenue trong fact_orders
+  revenue_status: delivered
+
+logging:
+  level: INFO
+  log_dir: logs

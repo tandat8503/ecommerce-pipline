@@ -1,18 +1,22 @@
 """
 transform/transform_orders.py
 
-Nhiệm vụ: Làm sạch bảng orders raw → orders sạch trong staging.
+Nhiệm vụ: Làm sạch bảng orders raw → staging.
+
+Lưu ý thiết kế (quan trọng):
+    - KHÔNG filter order_status ở đây
+    - Giữ full status (delivered, canceled, processing, shipped...) để
+      phục vụ cả revenue analysis lẫn funnel/cancel analysis
+    - Filter delivered chỉ xảy ra tại tầng WAREHOUSE khi build fact_orders
 
 Steps:
     1. Parse timestamp columns → datetime
-    2. Filter chỉ giữ status = 'delivered'
-    3. Tạo cột derived: order_date, order_year, order_month, order_quarter
-    4. Drop duplicate order_id
+    2. Tạo cột derived: order_date, order_year, order_month, order_quarter, order_dow
+    3. Drop duplicate order_id
 """
 
 import pandas as pd
 
-from pipeline.utils.config import ORDER_STATUS_FILTER
 from pipeline.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +31,7 @@ _TIMESTAMP_COLS = [
 
 def clean_orders(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Nhận raw orders DataFrame → trả về cleaned DataFrame.
+    Làm sạch bảng orders — giữ nguyên toàn bộ order_status.
 
     Args:
         df: output của read_orders()
@@ -35,6 +39,7 @@ def clean_orders(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Cleaned DataFrame lưu vào staging/orders.parquet
     """
+    df = df.copy()
     logger.info(f"[TRANSFORM] orders — start: {len(df):,} rows")
 
     # 1. Parse timestamps
@@ -42,27 +47,22 @@ def clean_orders(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    # 2. Filter delivered
-    before = len(df)
-    df = df[df["order_status"] == ORDER_STATUS_FILTER].copy()
-    logger.info(
-        f"[TRANSFORM] orders — filter '{ORDER_STATUS_FILTER}': "
-        f"{before:,} → {len(df):,} rows (removed {before - len(df):,})"
-    )
-
-    # 3. Derived columns
+    # 2. Derived time columns từ order_purchase_timestamp
     ref = "order_purchase_timestamp"
     df["order_date"]    = df[ref].dt.date
     df["order_year"]    = df[ref].dt.year
     df["order_month"]   = df[ref].dt.month
     df["order_quarter"] = df[ref].dt.quarter
-    df["order_dow"]     = df[ref].dt.day_name()
+    df["order_dow"]     = df[ref].dt.day_name()   # Monday, Tuesday...
 
-    # 4. Dedup
+    # 3. Dedup — giữ lần đầu tiên
     before = len(df)
     df = df.drop_duplicates(subset=["order_id"], keep="first")
     if (dropped := before - len(df)):
         logger.warning(f"[TRANSFORM] orders — dropped {dropped} duplicate order_id")
 
+    # Log phân phối status để monitoring
+    status_dist = df["order_status"].value_counts().to_dict()
+    logger.info(f"[TRANSFORM] orders — status distribution: {status_dist}")
     logger.info(f"[TRANSFORM] orders — done: {len(df):,} rows")
     return df
