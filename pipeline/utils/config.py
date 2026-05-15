@@ -1,29 +1,51 @@
 """
 utils/config.py — Single source of truth cho toàn bộ pipeline.
-
-Architecture:
-    Raw CSV (data/raw/)
-        → Staging Data Lake  (data/staging/ecommerce/dt=YYYY-MM-DD/ + latest/)
-        → Warehouse          (data/warehouse/ecommerce/dt=YYYY-MM-DD/ + latest/)
-        → BigQuery DWH       (ecommerce_dwh.fact_orders, dim_*, ...)
+Đọc cấu hình từ config.yaml.
 """
 
+import yaml
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PROJECT ROOT
+# PROJECT ROOT & CONFIG LOAD
 # ─────────────────────────────────────────────────────────────────────────────
-PROJECT_ROOT  = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CONFIG_PATH  = PROJECT_ROOT / "config.yaml"
+
+def load_config() -> dict[str, Any]:
+    """Đọc file config.yaml."""
+    if not CONFIG_PATH.exists():
+        # Fallback default nếu file config không tồn tại
+        return {
+            "data": {"raw_dir": "data/raw", "staging_dir": "data/staging", "warehouse_dir": "data/warehouse"},
+            "pipeline": {"revenue_status": "delivered", "min_price": 0.0}
+        }
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+_cfg = load_config()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DATA LAKE PATHS
+# PATHS (đọc từ config.yaml)
 # ─────────────────────────────────────────────────────────────────────────────
-DATA_DIR      = PROJECT_ROOT / "data"
-RAW_DIR       = DATA_DIR / "raw"
-STAGING_BASE  = DATA_DIR / "staging"  / "ecommerce"
-WAREHOUSE_BASE= DATA_DIR / "warehouse" / "ecommerce"
-LOG_DIR       = PROJECT_ROOT / "logs"
+DATA_DIR       = PROJECT_ROOT / "data"
+RAW_DIR        = PROJECT_ROOT / _cfg["data"]["raw_dir"]
+STAGING_BASE   = PROJECT_ROOT / _cfg["data"]["staging_dir"] / "ecommerce"
+WAREHOUSE_BASE = PROJECT_ROOT / _cfg["data"]["warehouse_dir"] / "ecommerce"
+LOG_DIR        = PROJECT_ROOT / _cfg["logging"]["log_dir"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SETTINGS
+# ─────────────────────────────────────────────────────────────────────────────
+PIPELINE_DATE  = datetime.now().strftime("%Y-%m-%d")
+REVENUE_STATUS = _cfg["pipeline"]["revenue_status"]
+MIN_PRICE      = _cfg["pipeline"]["min_price"]
+
+# BigQuery (TODO: update in config.yaml)
+GCP_PROJECT_ID = _cfg.get("bigquery", {}).get("project_id", "your-gcp-project-id")
+BQ_DATASET     = _cfg.get("bigquery", {}).get("dataset", "ecommerce_dwh")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # RAW FILE MAPPING
@@ -37,77 +59,38 @@ RAW_FILES: dict[str, Path] = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PIPELINE SETTINGS
-# ─────────────────────────────────────────────────────────────────────────────
-PIPELINE_DATE       = datetime.now().strftime("%Y-%m-%d")  # Ngày chạy pipeline
-REVENUE_STATUS      = "delivered"                           # Status để tính doanh thu
-MIN_PRICE           = 0.0
-
-# BigQuery
-GCP_PROJECT_ID      = "your-gcp-project-id"   # TODO: thay bằng project thật
-BQ_DATASET          = "ecommerce_dwh"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PATH HELPERS
+# HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_raw_path(table: str) -> Path:
-    """Trả về path tới raw CSV. Raise nếu file không tồn tại."""
     if table not in RAW_FILES:
-        raise KeyError(f"Unknown table '{table}'. Valid: {list(RAW_FILES)}")
+        raise KeyError(f"Unknown table '{table}'")
     path = RAW_FILES[table]
     if not path.exists():
         raise FileNotFoundError(f"Raw file not found: {path}")
     return path
 
-
 def get_staging_path(table: str, date: str = PIPELINE_DATE) -> Path:
-    """
-    Trả về path Parquet trong staging layer.
-
-    Output: data/staging/ecommerce/dt=YYYY-MM-DD/{table}.parquet
-    """
     partition_dir = STAGING_BASE / f"dt={date}"
     partition_dir.mkdir(parents=True, exist_ok=True)
     return partition_dir / f"{table}.parquet"
 
-
 def get_staging_latest_path(table: str) -> Path:
-    """
-    Trả về path Parquet trong staging/latest/.
-    latest/ luôn chứa bản mới nhất để dễ đọc.
-
-    Output: data/staging/ecommerce/latest/{table}.parquet
-    """
     latest_dir = STAGING_BASE / "latest"
     latest_dir.mkdir(parents=True, exist_ok=True)
     return latest_dir / f"{table}.parquet"
 
-
 def get_warehouse_path(table: str, date: str = PIPELINE_DATE) -> Path:
-    """
-    Trả về path Parquet trong warehouse layer.
-
-    Output: data/warehouse/ecommerce/dt=YYYY-MM-DD/{table}.parquet
-    """
     partition_dir = WAREHOUSE_BASE / f"dt={date}"
     partition_dir.mkdir(parents=True, exist_ok=True)
     return partition_dir / f"{table}.parquet"
 
-
 def get_warehouse_latest_path(table: str) -> Path:
-    """
-    Trả về path Parquet trong warehouse/latest/.
-
-    Output: data/warehouse/ecommerce/latest/{table}.parquet
-    """
     latest_dir = WAREHOUSE_BASE / "latest"
     latest_dir.mkdir(parents=True, exist_ok=True)
     return latest_dir / f"{table}.parquet"
 
-
 def ensure_dirs() -> None:
-    """Đảm bảo tất cả output dirs tồn tại trước khi pipeline chạy."""
     for d in [
         STAGING_BASE / f"dt={PIPELINE_DATE}",
         STAGING_BASE / "latest",

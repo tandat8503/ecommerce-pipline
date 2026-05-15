@@ -17,6 +17,11 @@ pipeline:
   # Status dùng để tính revenue trong fact_orders
   revenue_status: delivered
 
+bigquery:
+  project_id: "your-gcp-project-id"
+  dataset: "ecommerce_dwh"
+  load_target: "local" # local | bigquery
+
 logging:
   level: INFO
   log_dir: logs
