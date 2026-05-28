@@ -15,3 +15,9 @@ credentials*.json
 .pytest_cache/
 .coverage
 .DS_Store
+# Secrets
+secrets/
+.env
+*.json
+service-account*.json
+credentials*.json

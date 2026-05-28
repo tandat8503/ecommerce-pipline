@@ -28,15 +28,16 @@ business:
     - created
 
 load:
-  target: local
+  target: bigquery
   write_latest: true
   write_partitioned: true
 
 bigquery:
-  enabled: false
-  project_id: ""
-  dataset: ecommerce_dwh
-  location: US
+  enabled: true
+  project_id: "ecommerce-de-project-496409"
+  dataset: "ecommerce_dwh"
+  location: "US"
+  write_disposition: "WRITE_TRUNCATE"
 
 logging:
   level: INFO

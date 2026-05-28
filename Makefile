@@ -14,3 +14,6 @@ lint:
 
 clean:
 	rm -rf data/staging/* data/warehouse/* data/mart/* logs/* .pytest_cache/ __pycache__/ pipeline/**/__pycache__/
+
+check-warehouse:
+	python scripts/check_warehouse_output.py
